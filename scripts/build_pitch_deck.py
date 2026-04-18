@@ -119,13 +119,13 @@ def build() -> None:
     add_text(s, 0.7, 3.7, 5.5, 0.4, "Face-based (cameras)", size=16, bold=True, color=MUTED)
     add_bullets(s, 0.7, 4.1, 5.5, 3,
                 ["Needs a camera on your face",
-                 "Blocked from bars, hospitals, therapy offices",
+                 "Banned from bars, hospitals, therapy",
                  "Records strangers without consent"])
     add_text(s, 7, 3.7, 5.5, 0.4, "Voice-based (Cue)", size=16, bold=True, color=ACCENT)
     add_bullets(s, 7, 4.1, 5.5, 3,
-                ["Cameraless by physics — G2 has no lens",
+                ["Cameraless by physics",
                  "Works everywhere cameras can't",
-                 "Only remembers people you chose to remember"])
+                 "Only remembers people you enrolled"])
 
     # ---------- 4. Live demo placeholder ----------
     s = prs.slides.add_slide(blank_layout)
@@ -203,19 +203,68 @@ def build() -> None:
         "No network on the critical path. Claude used only for optional summaries.",
     ], size=20)
 
-    # ---------- 8. Why it wins ----------
+    # ---------- 8. Why this resonates ----------
     s = prs.slides.add_slide(blank_layout)
     paint_bg(s)
-    add_text(s, 0.7, 0.6, 12, 0.5, "WHY PEOPLE'S CHOICE", size=12, bold=True, color=ACCENT)
+    add_text(s, 0.7, 0.6, 12, 0.5, "WHY THIS RESONATES", size=12, bold=True, color=ACCENT)
     add_text(s, 0.7, 1.2, 12, 1.0, "Cue is the room.", size=44, bold=True)
     add_bullets(s, 0.7, 2.8, 12, 4, [
-        "Every judge forgot someone's name this week. Felt the micro-panic.",
-        "Every audience member is re-living it as pre-seeded teammates walk up.",
-        "Tagline repeats itself: \"Meta Ray-Bans remember faces. Cue remembers people.\"",
-        "\"Quiet Tech\" rendered as product. Best Brand Fit fallback.",
-    ], size=20)
+        "Everyone here forgot someone's name this week.",
+        "You walked into 40 intros today. You'll forget 34.",
+        "Meta tried cameras — they get you thrown out of the room.",
+        "G2 stays in. Cue is Quiet Tech rendered as product.",
+    ], size=22)
 
-    # ---------- 9. Close ----------
+    # ---------- 9. What's next ----------
+    s = prs.slides.add_slide(blank_layout)
+    paint_bg(s)
+    add_text(s, 0.7, 0.6, 12, 0.5, "WHAT'S NEXT", size=12, bold=True, color=ACCENT)
+    add_text(s, 0.7, 1.1, 12, 1.0, "From hackathon to daily wear.", size=36, bold=True)
+    # Two columns of roadmap cards.
+    roadmap_left = [
+        ("Speaker diarization",
+         "Match multiple voices in group\nconversations, not just 1:1."),
+        ("Proactive recall",
+         '"You promised Priya a beta\ninvite 21 days ago." — surfaced\nwhen her voice is detected.'),
+        ("Calendar hydration",
+         "Pull last meeting notes for the\nmatched person from your cal."),
+    ]
+    roadmap_right = [
+        ("Two-way consent",
+         "Two G2 wearers enroll each\nother in one tap. Standardized\nconsent handshake."),
+        ("CRM sync",
+         "One-way export to HubSpot or\nNotion for sales workflows."),
+        ("On-device Claude",
+         "Brief generation runs on the\nphone via on-device models —\nzero cloud on the critical path."),
+    ]
+
+    def _card(slide, x, y, title, body):
+        rect = slide.shapes.add_shape(1, Inches(x), Inches(y), Inches(5.9), Inches(1.4))
+        rect.fill.solid()
+        rect.fill.fore_color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+        rect.line.color.rgb = ACCENT
+        rect.line.width = Pt(1.5)
+        tf = rect.text_frame
+        tf.word_wrap = True
+        tf.margin_left = Inches(0.2)
+        tf.margin_right = Inches(0.2)
+        tf.margin_top = Inches(0.12)
+        p = tf.paragraphs[0]
+        r = p.add_run(); r.text = title
+        r.font.size = Pt(18); r.font.bold = True
+        r.font.color.rgb = INK; r.font.name = "Helvetica"
+        for line in body.split("\n"):
+            pp = tf.add_paragraph()
+            rr = pp.add_run(); rr.text = line
+            rr.font.size = Pt(13); rr.font.color.rgb = MUTED
+            rr.font.name = "Helvetica"
+
+    for i, (t, b) in enumerate(roadmap_left):
+        _card(s, 0.5, 2.2 + i * 1.6, t, b)
+    for i, (t, b) in enumerate(roadmap_right):
+        _card(s, 6.9, 2.2 + i * 1.6, t, b)
+
+    # ---------- 10. Close ----------
     s = prs.slides.add_slide(blank_layout)
     paint_bg(s, DARK)
     add_text(s, 0.7, 1.5, 12, 1.2,
