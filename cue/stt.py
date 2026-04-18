@@ -28,10 +28,12 @@ def transcribe(wav: np.ndarray, sr: int = 16_000) -> str:
 _NAME_PATTERNS = [
     # "I'm Priya" / "I am Priya Subramanian"
     re.compile(r"\bI(?:'m| am)\s+([A-Z][a-zA-Z'\-]+(?:\s+[A-Z][a-zA-Z'\-]+)?)\b"),
-    # "my name is Priya"
-    re.compile(r"\bmy name is\s+([A-Z][a-zA-Z'\-]+(?:\s+[A-Z][a-zA-Z'\-]+)?)\b", re.I),
+    # "my name is Priya" — \b...\b on the prefix is case-insensitive via the
+    # outer pattern, but the capture group stays case-sensitive so we only
+    # grab proper nouns.
+    re.compile(r"(?i:\bmy name is)\s+([A-Z][a-zA-Z'\-]+(?:\s+[A-Z][a-zA-Z'\-]+)?)\b"),
     # "this is Priya"
-    re.compile(r"\bthis is\s+([A-Z][a-zA-Z'\-]+(?:\s+[A-Z][a-zA-Z'\-]+)?)\b", re.I),
+    re.compile(r"(?i:\bthis is)\s+([A-Z][a-zA-Z'\-]+(?:\s+[A-Z][a-zA-Z'\-]+)?)\b"),
 ]
 
 
