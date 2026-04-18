@@ -170,6 +170,28 @@ def build() -> None:
             s.shapes.add_picture(str(png), Inches(x), Inches(y), width=Inches(5.7))
             add_text(s, x, y + 2.55, 5.7, 0.3, label, size=14, color=MUTED, align=PP_ALIGN.CENTER)
 
+    # ---------- 5c. Push + pull ----------
+    s = prs.slides.add_slide(blank_layout)
+    paint_bg(s)
+    add_text(s, 0.7, 0.4, 12, 0.5, "TWO WAYS TO RECALL", size=12, bold=True, color=ACCENT)
+    add_text(s, 0.7, 0.9, 12, 0.8, "Not just a notification. A memory surface.", size=28, bold=True)
+    # Two columns
+    add_text(s, 0.7, 2.1, 5.8, 0.4, "Push  —  voice triggers it", size=18, bold=True, color=MUTED)
+    add_bullets(s, 0.7, 2.6, 5.8, 3,
+                ["Someone speaks near you",
+                 "Cue matches their voiceprint",
+                 "Card fades onto your HUD in ≤1.5s",
+                 "You read, react, converse"], size=18)
+    add_text(s, 7, 2.1, 5.8, 0.4, "Pull  —  you ask for it", size=18, bold=True, color=ACCENT)
+    add_bullets(s, 7, 2.6, 5.8, 3,
+                ["Triple-tap your right temple",
+                 "Most-recent person fills the HUD",
+                 "Cycle to older contacts with more taps",
+                 "Before you walk into the next meeting"], size=18)
+    add_text(s, 0.7, 6.2, 12, 0.5,
+             "A memory you trust. Not a notification you react to.",
+             size=18, color=MUTED, align=PP_ALIGN.CENTER)
+
     # ---------- 6. Architecture (flow diagram image) ----------
     s = prs.slides.add_slide(blank_layout)
     paint_bg(s)
