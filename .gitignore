@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+.env
+~/.cue/
+tests/fixtures/*.wav
+!tests/fixtures/.gitkeep
