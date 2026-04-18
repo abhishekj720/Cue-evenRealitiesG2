@@ -16,7 +16,7 @@ ENROLL_SECONDS: float = 10.0
 NOTE_SECONDS: float = 5.0
 
 # Matching.
-MATCH_THRESHOLD: float = 0.75
+MATCH_THRESHOLD: float = 0.65
 DEDUP_WINDOW_S: int = 60
 CARD_TTL_MS: int = 6_000
 
