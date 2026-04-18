@@ -121,6 +121,12 @@ function App() {
     setSent((prev) => [payload, ...prev].slice(0, 10))
   }
 
+  const sendRawEvent = (raw: unknown) => {
+    const ws = wsRef.current
+    if (!ws || ws.readyState !== WebSocket.OPEN) return
+    ws.send(JSON.stringify({ type: 'raw_event', payload: raw }))
+  }
+
   useEffect(() => {
     let unsubscribe: (() => void) | undefined
     let disposed = false
@@ -187,6 +193,13 @@ function App() {
         const src = event.sysEvent?.eventSource
         const side = sourceSide(src) ?? 'right'
         const count = countFor(type)
+        // Always forward a sanitized copy of the raw event to Python for
+        // diagnostics; it's cheap and helps us see what the real G2 fires.
+        sendRawEvent({
+          raw: JSON.parse(JSON.stringify(event)),
+          classifiedSide: side,
+          classifiedCount: count,
+        })
         if (count != null) {
           setLastTouch(`${side} · tap x${count}`)
           sendToPython({ type: 'temple_tap', side, count })

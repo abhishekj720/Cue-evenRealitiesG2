@@ -124,17 +124,22 @@ class EvenBridge:
         if kind == "temple_tap":
             side = msg.get("side", "right")
             count = int(msg.get("count", 1))
+            log.info("← temple_tap %s x%d", side, count)
             for cb in self._tap_cbs:
                 try:
                     cb(side, count)
                 except Exception:
                     log.exception("temple_tap cb failed")
         elif kind == "head_shake":
+            log.info("← head_shake")
             for cb in self._shake_cbs:
                 try:
                     cb()
                 except Exception:
                     log.exception("head_shake cb failed")
+        elif kind == "raw_event":
+            # Diagnostic-only dump of the plugin's onEvenHubEvent.
+            log.info("← raw_event %s", msg.get("payload"))
         else:
             log.debug("ignoring bridge msg: %s", kind)
 
