@@ -21,11 +21,15 @@ def _setup_logging(rehearsal: bool) -> None:
     )
 
 
+def _say(msg: str) -> None:
+    print(msg, flush=True)
+
+
 def cmd_enroll(_args) -> int:
     db.init_db(DB_PATH)
-    person = enroll.run_enrollment(DB_PATH, on_status=print)
+    person = enroll.run_enrollment(DB_PATH, on_status=_say)
     if person is None:
-        print("Enrollment failed.")
+        _say("Enrollment failed.")
         return 1
     # Kick off optional Claude blurb in the background.
     if person.intro_text:
