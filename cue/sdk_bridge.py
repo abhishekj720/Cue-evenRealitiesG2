@@ -139,8 +139,17 @@ class EvenBridge:
             log.debug("ignoring bridge msg: %s", kind)
 
     def _broadcast(self, payload: dict) -> None:
-        if not self._loop or not self._clients:
+        n_clients = len(self._clients)
+        if not self._loop:
+            log.warning("broadcast dropped: event loop not ready: %s", payload.get("type"))
             return
+        if n_clients == 0:
+            log.warning(
+                "broadcast dropped: NO clients connected: %s",
+                payload.get("type"),
+            )
+            return
+        log.info("broadcast %s -> %d client(s)", payload.get("type"), n_clients)
         data = json.dumps(payload)
 
         async def _send_all():
