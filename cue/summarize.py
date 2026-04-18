@@ -102,13 +102,10 @@ def generate_brief(
     intro_text: str,
     user_note: str | None = None,
     offline_fallback: bool = True,
-) -> dict | None:
-    """Return {headline, context, followup}. Tries Claude; falls back offline.
-
-    Returns None only if both paths fail (no intro_text at all).
-    """
+) -> tuple[dict | None, str]:
+    """Return (brief_dict | None, source) where source is 'claude'|'offline'|'empty'."""
     if not intro_text:
-        return None
+        return None, "empty"
 
     if ANTHROPIC_API_KEY:
         try:
@@ -134,15 +131,15 @@ def generate_brief(
                 "followup": str(data.get("followup", ""))[:28],
             }
             if any(out.values()):
-                return out
+                return out, "claude"
         except ImportError:
             log.info("anthropic not installed; using offline brief")
         except Exception as exc:
             log.warning("claude brief failed (%s); using offline brief", exc)
 
     if offline_fallback:
-        return _offline_brief(intro_text)
-    return None
+        return _offline_brief(intro_text), "offline"
+    return None, "empty"
 
 
 def enqueue_blurb(db_path: Path, person_id: int, intro_text: str) -> None:
@@ -152,9 +149,16 @@ def enqueue_blurb(db_path: Path, person_id: int, intro_text: str) -> None:
         if blurb:
             db.set_blurb(db_path, person_id, blurb)
             log.info("blurb set for #%s: %r", person_id, blurb)
-        brief = generate_brief(intro_text)
-        if brief:
+        brief, source = generate_brief(intro_text)
+        if brief and source == "claude":
             db.set_brief(db_path, person_id, json.dumps(brief))
-            log.info("brief set for #%s: %s", person_id, brief)
+            log.info("brief (claude) set for #%s: %s", person_id, brief)
+        elif brief:
+            # Don't overwrite a pre-seeded hand-crafted brief with the
+            # offline fallback — only set if the row currently has nothing.
+            people = {p.id: p for p in db.all_people(db_path)}
+            if people.get(person_id) and not people[person_id].brief:
+                db.set_brief(db_path, person_id, json.dumps(brief))
+                log.info("brief (offline) set for #%s", person_id)
 
     threading.Thread(target=_work, daemon=True, name="summarize").start()

@@ -104,12 +104,18 @@ def cmd_brief(args) -> int:
         if not p.intro_text:
             print(f"#{p.id} {p.name}: no intro_text, skipping")
             continue
-        brief = summarize.generate_brief(p.intro_text, p.user_note)
+        brief, source = summarize.generate_brief(p.intro_text, p.user_note)
         if brief is None:
             print(f"#{p.id} {p.name}: brief unavailable (no intro_text)")
             continue
+        if source != "claude" and p.brief:
+            print(
+                f"#{p.id} {p.name}: kept existing brief "
+                f"(claude unavailable, would overwrite with offline fallback)"
+            )
+            continue
         db.set_brief(DB_PATH, p.id, _json.dumps(brief))
-        print(f"#{p.id} {p.name}: {brief}")
+        print(f"#{p.id} {p.name} ({source}): {brief}")
     return 0
 
 
