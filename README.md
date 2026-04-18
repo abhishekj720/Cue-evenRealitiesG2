@@ -126,3 +126,69 @@ cue/
 Per the project doc, MVP is a tap-to-enroll + recognize + HUD-card pipeline.
 Notes, Claude blurb, and seeding are polish. The pitch is two pre-seeded
 teammates walking up mid-talk.
+
+## Demo runbook (3 terminals)
+
+Three things need to run at once: the Python app (mic + matcher), the React
+plugin (WS client + HUD), and the Even simulator pointed at the plugin.
+
+### Terminal A — Python side
+
+```bash
+cd /Users/mohammadjaveedsanganakal/workplace/cue
+.venv/bin/python -m cue.app enroll     # capture 10s, enroll yourself
+.venv/bin/python -m cue.app list       # confirm row written
+.venv/bin/python -m cue.app run        # start the recognition loop + WS bridge
+```
+
+The `run` command opens the WebSocket bridge on `ws://127.0.0.1:8765`.
+
+### Terminal B — plugin dev server
+
+```bash
+cd /Users/mohammadjaveedsanganakal/workplace/cue/cue_plugin
+npm run dev
+```
+
+Vite prints a URL, usually `http://localhost:5173/`.
+
+### Terminal C — simulator
+
+```bash
+evenhub-simulator http://localhost:5173
+```
+
+The simulator opens a WebView where the plugin runs. The plugin auto-connects
+to the Python bridge on `ws://127.0.0.1:8765`. When Python recognizes a voice,
+it pushes a `send_card` over WS → plugin calls `textContainerUpgrade` → card
+lands on the HUD.
+
+### Pre-seed for the pitch
+
+Before the pitch, pre-enroll 3-4 teammates so the live stage moment is
+recognition, not enrollment:
+
+```bash
+.venv/bin/python scripts/generate_fixtures.py Priya Daniel Sarah
+# each teammate speaks 4s into your mic when prompted
+.venv/bin/python -m cue.app seed tests/fixtures/
+.venv/bin/python -m cue.app list
+```
+
+Then on stage, start `cue run` — as each pre-seeded teammate speaks, their
+card fades onto the HUD.
+
+## Event protocol (WebSocket bridge)
+
+```
+Python → React (commands)
+  {"type": "send_card", "title": str, "lines": [str], "ttl_ms": int}
+  {"type": "clear_card"}
+
+React → Python (events)
+  {"type": "temple_tap", "side": "left"|"right", "count": int}
+  {"type": "head_shake"}
+```
+
+Count maps to gesture: 1 = single tap, 2 = double tap, 3 = swipe up (treated
+as triple for the HUD list view shortcut).
