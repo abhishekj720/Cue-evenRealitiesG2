@@ -142,6 +142,15 @@ def set_brief(path: Path, person_id: int, brief: str) -> None:
         )
 
 
+def set_embedding(path: Path, person_id: int, embedding: np.ndarray) -> None:
+    """Replace a person's voiceprint while keeping their name/intro/notes."""
+    blob = np.asarray(embedding, dtype=np.float32).tobytes()
+    with _connect(path) as conn:
+        conn.execute(
+            "UPDATE people SET embedding = ? WHERE id = ?", (blob, person_id)
+        )
+
+
 def _row_to_person(row: sqlite3.Row) -> Person:
     keys = row.keys()
     return Person(

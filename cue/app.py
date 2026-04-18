@@ -58,6 +58,38 @@ def cmd_delete(args) -> int:
     return 0
 
 
+def cmd_reenroll(args) -> int:
+    """Replace a person's voiceprint with a fresh 10s capture.
+
+    Preserves name, intro_text, brief, user_note, match_count. Useful for
+    pre-pitch: seed rich context via scripts/seed_pitch_data.py, then
+    re-enroll each real teammate to bind their actual voice to the row.
+    """
+    import numpy as np
+
+    db.init_db(DB_PATH)
+    people = {p.id: p for p in db.all_people(DB_PATH)}
+    person = people.get(args.id)
+    if person is None:
+        print(f"no person with id={args.id}")
+        return 1
+
+    from cue import audio as _audio, embed as _embed
+    from cue.config import ENROLL_SECONDS
+
+    print(f"Re-enrolling #{person.id} {person.name}...", flush=True)
+    print("Preparing models (first run takes ~30s)...", flush=True)
+    _embed.embed(np.zeros(16_000, dtype=np.float32))
+
+    print(f"Listening for {ENROLL_SECONDS:.0f}s — speak now...", flush=True)
+    wav = _audio.record_fixed(ENROLL_SECONDS)
+    print("Embedding voice...", flush=True)
+    vec = _embed.embed(wav)
+    db.set_embedding(DB_PATH, person.id, vec)
+    print(f"Voiceprint updated for #{person.id} {person.name}")
+    return 0
+
+
 def cmd_brief(args) -> int:
     """Regenerate the Claude brief for a specific person (or everyone)."""
     import json as _json
@@ -186,6 +218,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     b.add_argument("id", nargs="?", type=int, default=None, help="person id (omit for all)")
     b.set_defaults(func=cmd_brief)
+
+    r = sub.add_parser(
+        "reenroll",
+        help="replace voiceprint for an existing person (keeps name/brief/notes)",
+    )
+    r.add_argument("id", type=int, help="person id to re-enroll")
+    r.set_defaults(func=cmd_reenroll)
 
     args = p.parse_args(argv)
     _setup_logging(args.rehearsal)
