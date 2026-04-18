@@ -58,6 +58,32 @@ def cmd_delete(args) -> int:
     return 0
 
 
+def cmd_brief(args) -> int:
+    """Regenerate the Claude brief for a specific person (or everyone)."""
+    import json as _json
+
+    db.init_db(DB_PATH)
+    people = db.all_people(DB_PATH)
+    targets = people if args.id is None else [p for p in people if p.id == args.id]
+    if not targets:
+        print(f"no person with id={args.id}")
+        return 1
+    for p in targets:
+        if not p.intro_text:
+            print(f"#{p.id} {p.name}: no intro_text, skipping")
+            continue
+        brief = summarize.generate_brief(p.intro_text, p.user_note)
+        if brief is None:
+            print(
+                f"#{p.id} {p.name}: brief unavailable "
+                "(set ANTHROPIC_API_KEY to enable)"
+            )
+            continue
+        db.set_brief(DB_PATH, p.id, _json.dumps(brief))
+        print(f"#{p.id} {p.name}: {brief}")
+    return 0
+
+
 def cmd_seed(args) -> int:
     folder = Path(args.folder)
     if not folder.is_dir():
@@ -156,6 +182,13 @@ def main(argv: list[str] | None = None) -> int:
     s = sub.add_parser("seed", help="enroll from a folder of .wav files")
     s.add_argument("folder")
     s.set_defaults(func=cmd_seed)
+
+    b = sub.add_parser(
+        "brief",
+        help="regenerate the Claude brief (headline/context/followup) for a person",
+    )
+    b.add_argument("id", nargs="?", type=int, default=None, help="person id (omit for all)")
+    b.set_defaults(func=cmd_brief)
 
     args = p.parse_args(argv)
     _setup_logging(args.rehearsal)

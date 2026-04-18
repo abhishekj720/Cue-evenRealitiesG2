@@ -13,6 +13,7 @@ def _dummy_person(pid: int, vec: np.ndarray) -> db.Person:
         embedding=vec,
         intro_text=None,
         blurb=None,
+        brief=None,
         user_note=None,
         source_context=None,
         created_at=0,

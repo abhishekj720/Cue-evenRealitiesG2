@@ -1,10 +1,15 @@
-"""Optional: Claude-generated 6-word blurb.
+"""Claude-generated HUD content.
 
-Called after each enrollment in a background thread. Never blocks the critical
-path. If ANTHROPIC_API_KEY is unset or the call fails, returns None.
+Two outputs:
+- `six_word_blurb(intro)` — original 6-word one-liner.
+- `generate_brief(intro, note)` — structured 3-line brief with a follow-up
+  prompt, meant to be rendered directly on the HUD when a match fires.
+
+Both are best-effort: return None when unavailable so callers never block.
 """
 from __future__ import annotations
 
+import json
 import logging
 import threading
 from pathlib import Path
@@ -41,7 +46,6 @@ def six_word_blurb(intro_text: str) -> str | None:
                 }
             ],
         )
-        # Flatten content blocks; take the first text block.
         for block in msg.content:
             if block.type == "text":
                 out = block.text.strip().strip(".")
@@ -51,12 +55,77 @@ def six_word_blurb(intro_text: str) -> str | None:
     return None
 
 
+_BRIEF_SYSTEM = """You render tiny HUD cards for a pair of smart glasses.
+
+The wearer just heard a known person speak. You help the wearer remember
+them and pick the best next thing to say.
+
+Given the intro transcript (what the person said when the wearer first
+enrolled them) and any notes the wearer attached, output a STRICT JSON
+object with exactly these keys:
+
+{
+  "headline": "<up to 28 chars: role + company/context>",
+  "context":  "<up to 28 chars: last promise, fact, or known tension>",
+  "followup": "<up to 28 chars: one line the wearer could say or ask next>"
+}
+
+Constraints:
+- ASCII only. No emojis, no curly quotes, no markdown.
+- Each value MUST be <= 28 characters.
+- Prefer verbs in the followup, imperative voice ("ask about...", "remind that...").
+- Never invent facts. If the intro is thin, keep it abstract ("new contact", "recent meet").
+
+Return ONLY the JSON. No prose, no code fences."""
+
+
+def generate_brief(intro_text: str, user_note: str | None = None) -> dict | None:
+    """Return {headline, context, followup} dict, or None on any failure."""
+    if not ANTHROPIC_API_KEY or not intro_text:
+        return None
+    try:
+        import anthropic
+    except ImportError:
+        log.info("anthropic not installed; skipping brief")
+        return None
+
+    payload = f"Intro: {intro_text}"
+    if user_note:
+        payload += f"\nWearer's notes:\n{user_note}"
+
+    try:
+        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        msg = client.messages.create(
+            model=BLURB_MODEL,
+            max_tokens=200,
+            system=_BRIEF_SYSTEM,
+            messages=[{"role": "user", "content": payload}],
+        )
+        raw = "".join(b.text for b in msg.content if getattr(b, "type", "") == "text").strip()
+        data = json.loads(raw)
+        out = {
+            "headline": str(data.get("headline", ""))[:28],
+            "context": str(data.get("context", ""))[:28],
+            "followup": str(data.get("followup", ""))[:28],
+        }
+        if not any(out.values()):
+            return None
+        return out
+    except Exception:
+        log.exception("brief generation failed")
+    return None
+
+
 def enqueue_blurb(db_path: Path, person_id: int, intro_text: str) -> None:
-    """Fire-and-forget: compute blurb on a background thread, write when done."""
+    """Fire-and-forget: compute blurb + brief on a background thread."""
     def _work() -> None:
         blurb = six_word_blurb(intro_text)
         if blurb:
             db.set_blurb(db_path, person_id, blurb)
             log.info("blurb set for #%s: %r", person_id, blurb)
+        brief = generate_brief(intro_text)
+        if brief:
+            db.set_brief(db_path, person_id, json.dumps(brief))
+            log.info("brief set for #%s: %s", person_id, brief)
 
-    threading.Thread(target=_work, daemon=True, name="blurb").start()
+    threading.Thread(target=_work, daemon=True, name="summarize").start()
