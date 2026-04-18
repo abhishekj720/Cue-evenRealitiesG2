@@ -9,8 +9,8 @@ from typing import Iterable, Protocol
 
 import numpy as np
 
-from cue import db, embed, hud, match
-from cue.config import DEDUP_WINDOW_S, MATCH_THRESHOLD
+from cue import db, embed, hud, match, stt
+from cue.config import CARD_TTL_MS, DEDUP_WINDOW_S, MATCH_THRESHOLD
 
 log = logging.getLogger(__name__)
 
@@ -32,11 +32,13 @@ class RecognitionLoop:
         bridge: Bridge,
         segments: Iterable[np.ndarray],
         threshold: float = MATCH_THRESHOLD,
+        echo: bool = False,
     ) -> None:
         self._db_path = db_path
         self._bridge = bridge
         self._segments = segments
         self._threshold = threshold
+        self._echo = echo
         self._last_shown: dict[int, float] = {}
         self._last_matched_id: int | None = None
         self._thread: threading.Thread | None = None
@@ -82,6 +84,8 @@ class RecognitionLoop:
                 top_score,
                 self._threshold,
             )
+            if self._echo:
+                self._push_echo_card(seg, top_person.name, top_score)
             return
         person, score = top_person, top_score
         now = time.time()
@@ -94,3 +98,18 @@ class RecognitionLoop:
         db.update_last_seen(self._db_path, person.id, int(now))
         log.info("MATCH %s score=%.3f -> push card", person.name, score)
         hud.render_card(self._bridge, person, score=score)
+
+    def _push_echo_card(self, seg: np.ndarray, top_name: str, top_score: float) -> None:
+        """Debug helper: transcribe the segment and show it on the HUD."""
+        try:
+            text = stt.transcribe(seg)
+        except Exception:
+            log.exception("echo transcribe failed")
+            return
+        snippet = (text or "(silence)")[:56]
+        log.info("echo: heard %r (top=%s %.2f)", snippet, top_name, top_score)
+        self._bridge.send_card(
+            title="heard",
+            lines=[snippet[:28], snippet[28:56], f"best={top_name} {top_score:.2f}"],
+            ttl_ms=CARD_TTL_MS,
+        )

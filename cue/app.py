@@ -72,6 +72,7 @@ def cmd_run(args) -> int:
     """Main recognition loop: bridge + mic + recognition thread."""
     db.init_db(DB_PATH)
     log = logging.getLogger("cue.run")
+    echo_mode = bool(getattr(args, "echo", False))
 
     bridge = sdk_bridge.EvenBridge()
     bridge.start()
@@ -116,7 +117,7 @@ def cmd_run(args) -> int:
                 yield seg
 
         loop = recognize.RecognitionLoop(
-            DB_PATH, bridge, segs(), threshold=MATCH_THRESHOLD
+            DB_PATH, bridge, segs(), threshold=MATCH_THRESHOLD, echo=echo_mode
         )
         loop_ref["loop"] = loop
         loop.start()
@@ -139,7 +140,13 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("enroll", help="capture 10s, enroll a new person").set_defaults(
         func=cmd_enroll
     )
-    sub.add_parser("run", help="run the recognition loop").set_defaults(func=cmd_run)
+    run_p = sub.add_parser("run", help="run the recognition loop")
+    run_p.add_argument(
+        "--echo",
+        action="store_true",
+        help="transcribe every speech segment and show it on the HUD (debug)",
+    )
+    run_p.set_defaults(func=cmd_run)
     sub.add_parser("list", help="list enrolled people").set_defaults(func=cmd_list)
 
     d = sub.add_parser("delete", help="delete a person by id")
