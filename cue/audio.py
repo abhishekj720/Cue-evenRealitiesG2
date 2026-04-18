@@ -96,11 +96,24 @@ class MicStream(AbstractContextManager["MicStream"]):
         voiced_len = 0
         in_speech = False
 
+        # Mic heartbeat — log peak RMS every ~1s so the user can verify audio
+        # is actually flowing in even when VAD doesn't fire.
+        hb_samples = 0
+        hb_peak_rms = 0.0
+        hb_every = SAMPLE_RATE  # 1 second
+
         while not self._stop.is_set():
             try:
                 frame = self._q.get(timeout=0.2)
             except queue.Empty:
                 continue
+            hb_samples += len(frame)
+            rms = float(np.sqrt(np.mean(frame.astype(np.float32) ** 2)))
+            hb_peak_rms = max(hb_peak_rms, rms)
+            if hb_samples >= hb_every:
+                log.info("mic heartbeat: peak_rms=%.4f (last %.1fs)", hb_peak_rms, hb_samples / SAMPLE_RATE)
+                hb_samples = 0
+                hb_peak_rms = 0.0
             pending = (
                 np.concatenate([pending, frame]) if pending.size else frame
             )
