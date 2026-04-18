@@ -12,6 +12,7 @@ from pptx.enum.text import PP_ALIGN
 from pptx.util import Inches, Pt
 
 OUT = Path(__file__).resolve().parent.parent / "docs" / "Cue-Pitch.pptx"
+SHOTS = Path(__file__).resolve().parent.parent / "docs" / "screenshots"
 
 INK = RGBColor(0x0E, 0x0E, 0x0E)
 BG = RGBColor(0xFA, 0xFA, 0xFA)
@@ -136,46 +137,57 @@ def build() -> None:
              "Abhishek says one sentence.\nCue recognizes his voice. The HUD says: \"Ask about G2 BLE quirks.\"",
              size=20, color=ACCENT, align=PP_ALIGN.CENTER)
 
-    # ---------- 5. What lands on the HUD ----------
+    # ---------- 5. What lands on the HUD (real screenshots) ----------
     s = prs.slides.add_slide(blank_layout)
     paint_bg(s)
-    add_text(s, 0.7, 0.6, 12, 0.5, "WHAT LANDS ON THE HUD", size=12, bold=True, color=ACCENT)
-    add_text(s, 0.7, 1.1, 12, 0.9, "One glanceable card. 576 x 288 pixels. Green on black.",
-             size=20, color=MUTED)
-    # Two mock HUD cards
-    hud_card(s, 0.7, 2.3, 5.8, 3.5, "Abhishek Jaiswal",
-             ["Infra eng, Cue co-builder",
-              "Pairing on demo-seed script",
-              "Ask how the script pairing w",
-              "",
-              "seen 8 min ago"])
-    hud_card(s, 6.85, 2.3, 5.8, 3.5, "Priya Subramanian",
-             ["PM design @ Acme, Q3 lead",
-              "Owes you beta invite link",
-              "Ask about onboarding friction",
-              "",
-              "seen 40 min ago"])
-    add_text(s, 0.7, 6.2, 12, 0.5,
+    add_text(s, 0.7, 0.4, 12, 0.5, "WHAT LANDS ON THE HUD", size=12, bold=True, color=ACCENT)
+    add_text(s, 0.7, 0.9, 12, 0.6, "One glanceable card. 576 x 288 px. Green on black.",
+             size=18, color=MUTED)
+    # Two real rendered cards side-by-side.
+    for png, x in ((SHOTS / "03_match_abhishek@2x.png", 0.7),
+                   (SHOTS / "05_match_priya@2x.png", 7.0)):
+        if png.exists():
+            s.shapes.add_picture(str(png), Inches(x), Inches(2.0),
+                                 width=Inches(5.6))
+    add_text(s, 0.7, 6.1, 12, 0.5,
              "Name  ·  what they do  ·  last thing promised  ·  what to say next",
              size=16, color=MUTED, align=PP_ALIGN.CENTER)
 
-    # ---------- 6. Architecture ----------
+    # ---------- 5b. End-to-end HUD states montage ----------
     s = prs.slides.add_slide(blank_layout)
     paint_bg(s)
-    add_text(s, 0.7, 0.6, 12, 0.5, "HOW IT WORKS", size=12, bold=True, color=ACCENT)
-    add_text(s, 0.7, 1.1, 12, 0.9, "Local-first. Cameraless. Built in a day.", size=24, bold=True)
-    lines = [
-        "Phone mic     →  VAD segments speech",
-        "Segment       →  Resemblyzer 256-d voiceprint",
-        "Voiceprint    →  cosine match against SQLite (local, ~/.cue/people.db)",
-        "Match         →  Claude Haiku writes a 3-line brief",
-        "Brief         →  HUD card via Even Hub SDK",
+    add_text(s, 0.7, 0.4, 12, 0.5, "END-TO-END HUD STATES", size=12, bold=True, color=ACCENT)
+    add_text(s, 0.7, 0.9, 12, 0.6, "Idle → match → another match → focus mode.",
+             size=18, color=MUTED)
+    positions = [
+        (SHOTS / "01_idle@2x.png",           0.6, 1.8, "Idle"),
+        (SHOTS / "03_match_abhishek@2x.png", 6.9, 1.8, "Match: Abhishek"),
+        (SHOTS / "04_match_tim@2x.png",      0.6, 4.6, "Match: Tim"),
+        (SHOTS / "06_focus@2x.png",          6.9, 4.6, "Focus mode"),
     ]
-    add_bullets(s, 0.7, 2.6, 12, 4,
-                lines, size=22, color=INK)
-    add_text(s, 0.7, 6.3, 12, 0.5,
-             "No cloud sync. No camera. No face database. ≤1.5s median latency.",
-             size=16, color=MUTED)
+    for png, x, y, label in positions:
+        if png.exists():
+            s.shapes.add_picture(str(png), Inches(x), Inches(y), width=Inches(5.7))
+            add_text(s, x, y + 2.55, 5.7, 0.3, label, size=14, color=MUTED, align=PP_ALIGN.CENTER)
+
+    # ---------- 6. Architecture (flow diagram image) ----------
+    s = prs.slides.add_slide(blank_layout)
+    paint_bg(s)
+    add_text(s, 0.7, 0.3, 12, 0.5, "HOW IT WORKS", size=12, bold=True, color=ACCENT)
+    flow_png = SHOTS / "flow_diagram.png"
+    if flow_png.exists():
+        s.shapes.add_picture(str(flow_png), Inches(0.5), Inches(0.9),
+                             width=Inches(12.3))
+
+    # ---------- 6b. Terminal log ----------
+    s = prs.slides.add_slide(blank_layout)
+    paint_bg(s, DARK)
+    add_text(s, 0.7, 0.4, 12, 0.5, "WHAT THE OPERATOR SEES", size=12, bold=True, color=ACCENT)
+    add_text(s, 0.7, 0.9, 12, 0.6, "Terminal A — live recognition log on stage", size=20, color=RGBColor(0xEE, 0xEE, 0xEE))
+    term_png = SHOTS / "07_terminal_log.png"
+    if term_png.exists():
+        s.shapes.add_picture(str(term_png), Inches(1.8), Inches(1.9),
+                             width=Inches(9.7))
 
     # ---------- 7. Privacy ----------
     s = prs.slides.add_slide(blank_layout)
