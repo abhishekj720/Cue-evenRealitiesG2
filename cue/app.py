@@ -119,6 +119,41 @@ def cmd_brief(args) -> int:
     return 0
 
 
+def cmd_recall(args) -> int:
+    """Find a person by name fragment and print their recall card to stdout.
+
+    When `cue run` is NOT talking to a live bridge, prints the formatted card
+    to the terminal. When it IS running, you can trigger this from the HUD
+    via triple-tap — this CLI is a dry-run helper for rehearsal.
+    """
+    import json as _json
+
+    db.init_db(DB_PATH)
+    people = db.all_people(DB_PATH)
+    needle = args.name.lower().strip()
+    matches = [p for p in people if needle in p.name.lower()]
+    if not matches:
+        print(f"no match for {args.name!r}. Try: cue list")
+        return 1
+    for p in matches:
+        print(f"#{p.id} {p.name}")
+        if p.brief:
+            try:
+                b = _json.loads(p.brief)
+                print(f"   headline: {b.get('headline','')}")
+                print(f"   context:  {b.get('context','')}")
+                print(f"   followup: {b.get('followup','')}")
+            except Exception:
+                print(f"   brief (raw): {p.brief}")
+        if p.user_note:
+            print(f"   notes: {p.user_note}")
+        if p.intro_text:
+            print(f"   intro: {p.intro_text[:120]}")
+        print(f"   last seen: {time.strftime('%Y-%m-%d %H:%M', time.localtime(p.last_seen_at))} "
+              f"· matches={p.match_count}")
+    return 0
+
+
 def cmd_seed(args) -> int:
     folder = Path(args.folder)
     if not folder.is_dir():
@@ -127,6 +162,13 @@ def cmd_seed(args) -> int:
     ids = demo_seed.seed_from_folder(DB_PATH, folder)
     print(f"seeded {len(ids)} people")
     return 0
+
+
+def _recall_person(bridge, person: db.Person) -> None:
+    """Push a recall card for `person` to the HUD via the bridge."""
+    from cue import hud as _hud
+
+    _hud.render_card(bridge, person)
 
 
 def cmd_run(args) -> int:
@@ -141,6 +183,8 @@ def cmd_run(args) -> int:
     # Shared state for double-tap note mode.
     loop_ref: dict = {}
     last_card_ts: dict = {"ts": 0.0}
+    # Triple-tap recall cycles through recently-seen people on repeated taps.
+    recall_state: dict = {"index": 0, "last_tap_ts": 0.0}
 
     def on_tap(side: str, count: int) -> None:
         if side != "right":
@@ -161,6 +205,25 @@ def cmd_run(args) -> int:
                 return
             note.run_note(DB_PATH, pid, on_status=log.info)
         elif count == 3:
+            # Recall mode: cycle through people ordered by last_seen_at.
+            # First triple-tap shows the most recent; subsequent triple-taps
+            # within 8 seconds cycle to the next older person.
+            people = [p for p in db.all_people(DB_PATH) if p.name]
+            if not people:
+                log.info("recall: no one enrolled yet")
+                return
+            now = time.time()
+            if now - recall_state["last_tap_ts"] < 8.0:
+                recall_state["index"] = (recall_state["index"] + 1) % len(people)
+            else:
+                recall_state["index"] = 0
+            recall_state["last_tap_ts"] = now
+            p = people[recall_state["index"]]
+            log.info(
+                "recall [%d/%d]: %s",
+                recall_state["index"] + 1, len(people), p.name,
+            )
+            _recall_person(bridge, p)
             cmd_list(args)
 
     bridge.on_temple_tap(on_tap)
@@ -231,6 +294,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     r.add_argument("id", type=int, help="person id to re-enroll")
     r.set_defaults(func=cmd_reenroll)
+
+    rc = sub.add_parser(
+        "recall",
+        help="find a person by name fragment and print their full recall card",
+    )
+    rc.add_argument("name", help='name substring, e.g. "javeed" or "abhi"')
+    rc.set_defaults(func=cmd_recall)
 
     args = p.parse_args(argv)
     _setup_logging(args.rehearsal)
