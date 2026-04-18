@@ -40,7 +40,12 @@ NOTE_SECONDS: float = 5.0
 
 # Matching.
 MATCH_THRESHOLD: float = 0.65
-DEDUP_WINDOW_S: int = 60
+# Dedup two ways:
+#  1. minimum time between cards for the same person (DEDUP_WINDOW_S)
+#  2. if the person goes silent for this long, the dedup clock resets
+#     (so picking up a conversation after a pause re-surfaces the card)
+DEDUP_WINDOW_S: int = 15
+DEDUP_SILENCE_RESET_S: int = 10
 CARD_TTL_MS: int = 6_000
 
 # Recognition loop.

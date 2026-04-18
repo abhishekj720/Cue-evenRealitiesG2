@@ -10,7 +10,12 @@ from typing import Iterable, Protocol
 import numpy as np
 
 from cue import db, embed, hud, match, stt
-from cue.config import CARD_TTL_MS, DEDUP_WINDOW_S, MATCH_THRESHOLD
+from cue.config import (
+    CARD_TTL_MS,
+    DEDUP_SILENCE_RESET_S,
+    DEDUP_WINDOW_S,
+    MATCH_THRESHOLD,
+)
 
 log = logging.getLogger(__name__)
 
@@ -39,7 +44,8 @@ class RecognitionLoop:
         self._segments = segments
         self._threshold = threshold
         self._echo = echo
-        self._last_shown: dict[int, float] = {}
+        self._last_shown: dict[int, float] = {}      # when card last pushed
+        self._last_matched_at: dict[int, float] = {}  # when speech last matched
         self._last_matched_id: int | None = None
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
@@ -90,7 +96,16 @@ class RecognitionLoop:
         person, score = top_person, top_score
         now = time.time()
         last = self._last_shown.get(person.id, 0.0)
-        if now - last < DEDUP_WINDOW_S:
+        last_matched = self._last_matched_at.get(person.id, 0.0)
+        silence_since_last_match = now - last_matched if last_matched else None
+        # If the person went silent for DEDUP_SILENCE_RESET_S, treat this as a
+        # new encounter and re-surface the card — picks up the conversation.
+        reset_by_silence = (
+            silence_since_last_match is not None
+            and silence_since_last_match > DEDUP_SILENCE_RESET_S
+        )
+        self._last_matched_at[person.id] = now
+        if now - last < DEDUP_WINDOW_S and not reset_by_silence:
             log.info("skip dedup: %s score=%.3f", person.name, score)
             return
         self._last_shown[person.id] = now
