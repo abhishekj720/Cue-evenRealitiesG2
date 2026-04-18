@@ -1,7 +1,11 @@
-"""Enrollment uses pre-recorded wavs via the seeding path — no live mic."""
-from __future__ import annotations
+"""Enrollment round-trips an embedding through the DB.
 
-from pathlib import Path
+True speaker-discrimination verification requires real wav fixtures — run
+`scripts/generate_fixtures.py <name>` to record 4s clips and drop them under
+`tests/fixtures/`. The slow test below embeds non-speech noise only to verify
+the pipeline (embed → DB → match) connects correctly.
+"""
+from __future__ import annotations
 
 import numpy as np
 import pytest
@@ -11,34 +15,24 @@ from cue.config import SAMPLE_RATE
 
 
 @pytest.mark.slow
-def test_same_speaker_round_trips(tmp_path):
-    """Two embeddings of the same pseudo-speaker match; two different ones don't.
-
-    This is a placeholder until real wav fixtures are committed — uses the same
-    random seed twice to simulate "same speaker", and different seeds for
-    "different speaker".
-    """
+def test_pipeline_round_trip(tmp_path):
+    """Embed → insert → re-embed same audio → best_match returns the row."""
     from cue import embed
 
-    rng1a = np.random.default_rng(42)
-    rng1b = np.random.default_rng(42)
-    rng2 = np.random.default_rng(99)
-
-    wav1a = (rng1a.standard_normal(SAMPLE_RATE * 2) * 0.1).astype(np.float32)
-    wav1b = (rng1b.standard_normal(SAMPLE_RATE * 2) * 0.1).astype(np.float32)
-    wav2 = (rng2.standard_normal(SAMPLE_RATE * 2) * 0.1).astype(np.float32)
+    rng = np.random.default_rng(42)
+    wav = (rng.standard_normal(SAMPLE_RATE * 3) * 0.1).astype(np.float32)
 
     db_path = tmp_path / "people.db"
     db.init_db(db_path)
-    v1 = embed.embed(wav1a)
-    db.insert_person(db_path, name="Alice", embedding=v1, intro_text=None)
+    v = embed.embed(wav)
+    pid = db.insert_person(db_path, name="Alice", embedding=v, intro_text=None)
+    assert pid > 0
 
-    v1b = embed.embed(wav1b)
-    v2 = embed.embed(wav2)
-
+    # Same audio → top-1 match with very high cosine.
+    q = embed.embed(wav)
     people = db.all_people(db_path)
-    same_result = match.best_match(v1b, people, threshold=0.5)
-    diff_result = match.best_match(v2, people, threshold=0.99)
-
-    assert same_result is not None
-    assert diff_result is None
+    result = match.best_match(q, people, threshold=0.9)
+    assert result is not None
+    person, score = result
+    assert person.name == "Alice"
+    assert score > 0.99
