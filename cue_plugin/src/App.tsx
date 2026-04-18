@@ -16,9 +16,19 @@ const MAIN_CONTAINER_NAME = 'cue'
 const DIVIDER = '-'.repeat(28)
 const IDLE_HUD_TEXT = ['Cue', '', DIVIDER, '', 'Listening...'].join('\n')
 
-const DEFAULT_BRIDGE_URL =
-  (import.meta.env as { VITE_CUE_BRIDGE_URL?: string }).VITE_CUE_BRIDGE_URL ??
-  'ws://127.0.0.1:8765'
+// Use the host that served this page so the plugin also works when loaded
+// from a phone on the LAN (real glasses). Fall back to the env override or
+// localhost when running in a dev browser without a host header (rare).
+const DEFAULT_BRIDGE_URL = (() => {
+  const envUrl = (import.meta.env as { VITE_CUE_BRIDGE_URL?: string })
+    .VITE_CUE_BRIDGE_URL
+  if (envUrl) return envUrl
+  const host =
+    typeof window !== 'undefined' && window.location.hostname
+      ? window.location.hostname
+      : '127.0.0.1'
+  return `ws://${host}:8765`
+})()
 
 type IncomingCard = {
   type: 'send_card'

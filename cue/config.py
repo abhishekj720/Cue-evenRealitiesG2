@@ -24,7 +24,9 @@ CARD_TTL_MS: int = 6_000
 ROLLING_SEGMENT_S: float = 3.0
 
 # WebSocket bridge to the React plugin in the Even app.
-BRIDGE_HOST: str = os.environ.get("CUE_BRIDGE_HOST", "127.0.0.1")
+# 0.0.0.0 so the plugin running on a phone (real G2 demo) can reach this
+# laptop over the LAN. 127.0.0.1 is fine for the simulator-only flow.
+BRIDGE_HOST: str = os.environ.get("CUE_BRIDGE_HOST", "0.0.0.0")
 BRIDGE_PORT: int = int(os.environ.get("CUE_BRIDGE_PORT", "8765"))
 
 # Optional Claude blurb.
