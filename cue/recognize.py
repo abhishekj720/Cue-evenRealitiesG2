@@ -67,18 +67,30 @@ class RecognitionLoop:
     def _handle_segment(self, seg: np.ndarray) -> None:
         people = db.all_people(self._db_path)
         if not people:
+            log.info("segment received but DB empty — run `cue enroll` first")
             return
         vec = embed.embed(seg)
-        result = match.best_match(vec, people, threshold=self._threshold)
-        if result is None:
+        # Log the top score even below threshold so the user can tune.
+        top = match.best_match(vec, people, threshold=0.0)
+        if top is None:
             return
-        person, score = result
+        top_person, top_score = top
+        if top_score < self._threshold:
+            log.info(
+                "no match: top=%s score=%.3f (threshold %.2f)",
+                top_person.name,
+                top_score,
+                self._threshold,
+            )
+            return
+        person, score = top_person, top_score
         now = time.time()
         last = self._last_shown.get(person.id, 0.0)
         if now - last < DEDUP_WINDOW_S:
-            log.debug("skip dedup %s score=%.3f", person.name, score)
+            log.info("skip dedup: %s score=%.3f", person.name, score)
             return
         self._last_shown[person.id] = now
         self._last_matched_id = person.id
         db.update_last_seen(self._db_path, person.id, int(now))
+        log.info("MATCH %s score=%.3f -> push card", person.name, score)
         hud.render_card(self._bridge, person, score=score)

@@ -6,6 +6,7 @@
 """
 from __future__ import annotations
 
+import logging
 import queue
 import threading
 from contextlib import AbstractContextManager
@@ -14,6 +15,8 @@ from typing import Iterator
 import numpy as np
 
 from cue.config import CHANNELS, SAMPLE_RATE, VAD_BLOCK_MS
+
+log = logging.getLogger(__name__)
 
 
 def record_fixed(seconds: float) -> np.ndarray:
@@ -97,6 +100,10 @@ class MicStream(AbstractContextManager["MicStream"]):
                 if result is not None and "end" in result:
                     if voiced_len >= self._min_len:
                         seg = np.concatenate(buf)[: self._max_len]
+                        log.info(
+                            "vad: emitting speech segment (%.2fs)",
+                            len(seg) / SAMPLE_RATE,
+                        )
                         try:
                             self._segments.put_nowait(seg)
                         except queue.Full:
