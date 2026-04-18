@@ -79,40 +79,69 @@ Constraints:
 Return ONLY the JSON. No prose, no code fences."""
 
 
-def generate_brief(intro_text: str, user_note: str | None = None) -> dict | None:
-    """Return {headline, context, followup} dict, or None on any failure."""
-    if not ANTHROPIC_API_KEY or not intro_text:
-        return None
-    try:
-        import anthropic
-    except ImportError:
-        log.info("anthropic not installed; skipping brief")
+def _offline_brief(intro_text: str, name: str | None = None) -> dict:
+    """Rule-based fallback brief when Claude is unavailable.
+
+    Not clever — just reframes the intro into three ≤28-char lines so the
+    HUD card renders something useful.
+    """
+    text = (intro_text or "").strip()
+    # Chop intro_text into speech-like beats.
+    parts = [p.strip() for p in text.replace("\n", ".").split(".") if p.strip()]
+    headline = parts[0] if parts else (name or "known contact")
+    context = parts[1] if len(parts) > 1 else "no notes yet"
+    followup = "ask what they're working on"
+    return {
+        "headline": headline[:28],
+        "context": context[:28],
+        "followup": followup[:28],
+    }
+
+
+def generate_brief(
+    intro_text: str,
+    user_note: str | None = None,
+    offline_fallback: bool = True,
+) -> dict | None:
+    """Return {headline, context, followup}. Tries Claude; falls back offline.
+
+    Returns None only if both paths fail (no intro_text at all).
+    """
+    if not intro_text:
         return None
 
-    payload = f"Intro: {intro_text}"
-    if user_note:
-        payload += f"\nWearer's notes:\n{user_note}"
+    if ANTHROPIC_API_KEY:
+        try:
+            import anthropic
 
-    try:
-        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-        msg = client.messages.create(
-            model=BLURB_MODEL,
-            max_tokens=200,
-            system=_BRIEF_SYSTEM,
-            messages=[{"role": "user", "content": payload}],
-        )
-        raw = "".join(b.text for b in msg.content if getattr(b, "type", "") == "text").strip()
-        data = json.loads(raw)
-        out = {
-            "headline": str(data.get("headline", ""))[:28],
-            "context": str(data.get("context", ""))[:28],
-            "followup": str(data.get("followup", ""))[:28],
-        }
-        if not any(out.values()):
-            return None
-        return out
-    except Exception:
-        log.exception("brief generation failed")
+            payload = f"Intro: {intro_text}"
+            if user_note:
+                payload += f"\nWearer's notes:\n{user_note}"
+            client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+            msg = client.messages.create(
+                model=BLURB_MODEL,
+                max_tokens=200,
+                system=_BRIEF_SYSTEM,
+                messages=[{"role": "user", "content": payload}],
+            )
+            raw = "".join(
+                b.text for b in msg.content if getattr(b, "type", "") == "text"
+            ).strip()
+            data = json.loads(raw)
+            out = {
+                "headline": str(data.get("headline", ""))[:28],
+                "context": str(data.get("context", ""))[:28],
+                "followup": str(data.get("followup", ""))[:28],
+            }
+            if any(out.values()):
+                return out
+        except ImportError:
+            log.info("anthropic not installed; using offline brief")
+        except Exception as exc:
+            log.warning("claude brief failed (%s); using offline brief", exc)
+
+    if offline_fallback:
+        return _offline_brief(intro_text)
     return None
 
 

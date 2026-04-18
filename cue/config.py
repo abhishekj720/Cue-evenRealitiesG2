@@ -4,6 +4,29 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+
+def _load_env_file(path: Path) -> None:
+    """Tiny .env loader — sets os.environ for any KEY=VALUE lines in the file.
+
+    Existing env vars win. Comments and blank lines are skipped.
+    """
+    if not path.is_file():
+        return
+    for raw in path.read_text().splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
+# Load ./.env relative to the project root so every cue entrypoint sees
+# ANTHROPIC_API_KEY without requiring the user to `export` it manually.
+_load_env_file(Path(__file__).resolve().parent.parent / ".env")
+
 # Local data dir — all persistent state lives here.
 DATA_DIR: Path = Path(os.environ.get("CUE_DATA_DIR", Path.home() / ".cue")).expanduser()
 DB_PATH: Path = DATA_DIR / "people.db"

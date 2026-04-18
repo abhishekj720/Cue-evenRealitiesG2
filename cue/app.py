@@ -74,10 +74,7 @@ def cmd_brief(args) -> int:
             continue
         brief = summarize.generate_brief(p.intro_text, p.user_note)
         if brief is None:
-            print(
-                f"#{p.id} {p.name}: brief unavailable "
-                "(set ANTHROPIC_API_KEY to enable)"
-            )
+            print(f"#{p.id} {p.name}: brief unavailable (no intro_text)")
             continue
         db.set_brief(DB_PATH, p.id, _json.dumps(brief))
         print(f"#{p.id} {p.name}: {brief}")
