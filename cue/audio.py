@@ -79,39 +79,55 @@ class MicStream(AbstractContextManager["MicStream"]):
             yield seg
 
     def _vad_loop(self) -> None:
-        """Consume raw 20ms frames; group voiced frames into segments."""
+        """Consume raw mic frames; feed silero-vad in fixed 512-sample chunks.
+
+        sounddevice delivers 20ms frames (=320 samples at 16kHz), but silero-vad
+        requires exactly 512 samples per call. We accumulate a rolling byte
+        buffer and slice it into 512-sample VAD chunks.
+        """
         from silero_vad import load_silero_vad, VADIterator
 
         model = load_silero_vad()
         vad = VADIterator(model, sampling_rate=SAMPLE_RATE)
-        buf: list[np.ndarray] = []
+        CHUNK = 512
+
+        pending = np.empty(0, dtype=np.float32)  # leftover samples between frames
+        seg_buf: list[np.ndarray] = []
         voiced_len = 0
+        in_speech = False
 
         while not self._stop.is_set():
             try:
                 frame = self._q.get(timeout=0.2)
             except queue.Empty:
                 continue
-            # silero-vad needs 512-sample chunks at 16kHz (32ms). Slice accordingly.
-            for chunk in _chunks(frame, 512):
+            pending = (
+                np.concatenate([pending, frame]) if pending.size else frame
+            )
+            # Consume as many 512-sample chunks as available.
+            while len(pending) >= CHUNK:
+                chunk = pending[:CHUNK]
+                pending = pending[CHUNK:]
                 result = vad(chunk, return_seconds=False)
-                buf.append(chunk)
-                voiced_len += len(chunk)
-                if result is not None and "end" in result:
-                    if voiced_len >= self._min_len:
-                        seg = np.concatenate(buf)[: self._max_len]
-                        log.info(
-                            "vad: emitting speech segment (%.2fs)",
-                            len(seg) / SAMPLE_RATE,
-                        )
-                        try:
-                            self._segments.put_nowait(seg)
-                        except queue.Full:
-                            pass
-                    buf.clear()
-                    voiced_len = 0
-
-
-def _chunks(arr: np.ndarray, size: int):
-    for i in range(0, len(arr) - size + 1, size):
-        yield arr[i : i + size]
+                if in_speech:
+                    seg_buf.append(chunk)
+                    voiced_len += CHUNK
+                if result is not None:
+                    if "start" in result and not in_speech:
+                        in_speech = True
+                        seg_buf = [chunk]
+                        voiced_len = CHUNK
+                    if "end" in result and in_speech:
+                        if voiced_len >= self._min_len:
+                            seg = np.concatenate(seg_buf)[: self._max_len]
+                            log.info(
+                                "vad: emitting speech segment (%.2fs)",
+                                len(seg) / SAMPLE_RATE,
+                            )
+                            try:
+                                self._segments.put_nowait(seg)
+                            except queue.Full:
+                                pass
+                        seg_buf = []
+                        voiced_len = 0
+                        in_speech = False
