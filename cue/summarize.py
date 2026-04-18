@@ -124,6 +124,12 @@ def generate_brief(
             raw = "".join(
                 b.text for b in msg.content if getattr(b, "type", "") == "text"
             ).strip()
+            # Haiku likes to wrap JSON in ```json ... ``` fences — strip them.
+            if raw.startswith("```"):
+                raw = raw.split("```", 2)[1]
+                if raw.startswith("json"):
+                    raw = raw[len("json"):]
+                raw = raw.strip()
             data = json.loads(raw)
             out = {
                 "headline": str(data.get("headline", ""))[:28],
