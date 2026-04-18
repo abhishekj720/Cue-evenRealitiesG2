@@ -18,7 +18,15 @@ def run_enrollment(
     Falls back to `Unnamed-<timestamp>` if name extraction fails.
     Returns the newly-written Person, or None on failure.
     """
-    on_status(f"Listening for {ENROLL_SECONDS:.0f}s...")
+    # Warm the Resemblyzer + Whisper models up front so the "Embedding..." step
+    # after the user speaks is ~150ms instead of 30s on a cold Python process.
+    import numpy as np
+
+    on_status("Preparing models (first run takes ~30s)...")
+    embed.embed(np.zeros(16_000, dtype=np.float32))
+    stt.transcribe(np.zeros(16_000, dtype=np.float32))
+
+    on_status(f"Listening for {ENROLL_SECONDS:.0f}s — speak now...")
     wav = audio.record_fixed(ENROLL_SECONDS)
 
     on_status("Transcribing...")
