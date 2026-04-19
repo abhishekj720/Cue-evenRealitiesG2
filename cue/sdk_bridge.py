@@ -29,6 +29,8 @@ log = logging.getLogger(__name__)
 
 TempleTapCallback = Callable[[Literal["left", "right"], int], None]
 HeadShakeCallback = Callable[[], None]
+SaveCaptionsCallback = Callable[[], None]
+ClearCaptionsCallback = Callable[[], None]
 
 
 class EvenBridge:
@@ -50,12 +52,20 @@ class EvenBridge:
         self._stop = threading.Event()
         self._tap_cbs: list[TempleTapCallback] = []
         self._shake_cbs: list[HeadShakeCallback] = []
+        self._save_cbs: list[SaveCaptionsCallback] = []
+        self._clear_cbs: list[ClearCaptionsCallback] = []
 
     def on_temple_tap(self, cb: TempleTapCallback) -> None:
         self._tap_cbs.append(cb)
 
     def on_head_shake(self, cb: HeadShakeCallback) -> None:
         self._shake_cbs.append(cb)
+
+    def on_save_captions(self, cb: SaveCaptionsCallback) -> None:
+        self._save_cbs.append(cb)
+
+    def on_clear_captions(self, cb: ClearCaptionsCallback) -> None:
+        self._clear_cbs.append(cb)
 
     def start(self) -> None:
         self._thread = threading.Thread(
@@ -77,6 +87,17 @@ class EvenBridge:
 
     def clear_card(self) -> None:
         self._broadcast({"type": "clear_card"})
+
+    def send_caption(self, source: str, target: str, target_lang: str) -> None:
+        """Push a live-translation caption to the HUD."""
+        self._broadcast(
+            {
+                "type": "caption",
+                "source": source,
+                "target": target,
+                "target_lang": target_lang,
+            }
+        )
 
     # ---- internals ------------------------------------------------------
 
@@ -140,6 +161,20 @@ class EvenBridge:
         elif kind == "raw_event":
             # Diagnostic-only dump of the plugin's onEvenHubEvent.
             log.info("← raw_event %s", msg.get("payload"))
+        elif kind == "save_captions":
+            log.info("← save_captions")
+            for cb in self._save_cbs:
+                try:
+                    cb()
+                except Exception:
+                    log.exception("save_captions cb failed")
+        elif kind == "clear_captions":
+            log.info("← clear_captions")
+            for cb in self._clear_cbs:
+                try:
+                    cb()
+                except Exception:
+                    log.exception("clear_captions cb failed")
         else:
             log.debug("ignoring bridge msg: %s", kind)
 

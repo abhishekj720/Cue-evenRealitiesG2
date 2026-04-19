@@ -119,6 +119,102 @@ def cmd_brief(args) -> int:
     return 0
 
 
+def cmd_translate(args) -> int:
+    """Live-caption daemon: mic → Whisper → Claude → HUD caption + web panel.
+
+    Press Ctrl+C to stop. Save the session via the 'Save' button on the
+    plugin's web panel — writes to ~/.cue/translations/<timestamp>.json.
+    """
+    import json as _json
+    from pathlib import Path as _Path
+    import signal as _signal
+    import threading as _threading
+
+    from cue import audio as _audio
+    from cue import stt as _stt
+    from cue import translate as _translate
+    from cue.config import ensure_data_dir, DATA_DIR
+
+    target = args.to
+    log = logging.getLogger("cue.translate")
+    log.info("translate mode → target=%s", target)
+
+    bridge = sdk_bridge.EvenBridge()
+    bridge.start()
+
+    # Session-local cache of (source, target) tuples.
+    session: list[dict] = []
+    session_lock = _threading.Lock()
+
+    translations_dir = DATA_DIR / "translations"
+    translations_dir.mkdir(parents=True, exist_ok=True)
+
+    def save_session() -> None:
+        with session_lock:
+            items = list(session)
+        if not items:
+            log.info("save: session is empty")
+            return
+        ensure_data_dir()
+        path = translations_dir / f"{time.strftime('%Y%m%d-%H%M%S')}.json"
+        path.write_text(_json.dumps({
+            "target_lang": target,
+            "captured_at": int(time.time()),
+            "entries": items,
+        }, indent=2, ensure_ascii=False))
+        log.info("saved %d captions → %s", len(items), path)
+
+    def clear_session() -> None:
+        with session_lock:
+            n = len(session)
+            session.clear()
+        log.info("cleared %d cached captions", n)
+
+    bridge.on_save_captions(save_session)
+    bridge.on_clear_captions(clear_session)
+
+    # Warm models so the first segment isn't 30s late.
+    import numpy as _np
+    log.info("warming STT (first run takes ~30s)...")
+    _stt.transcribe(_np.zeros(16_000, dtype=_np.float32))
+
+    stop = {"flag": False}
+    def _sigint(_s, _f): stop["flag"] = True
+    _signal.signal(_signal.SIGINT, _sigint)
+
+    with _audio.MicStream() as mic:
+        log.info("translate running; Ctrl+C to exit")
+        for seg in mic.iter_segments():
+            if stop["flag"]:
+                break
+            try:
+                source = _stt.transcribe(seg)
+            except Exception:
+                log.exception("transcribe failed")
+                continue
+            source = (source or "").strip()
+            if not source:
+                continue
+            log.info("heard: %r", source)
+            translated = _translate.translate_text(source, target=target) or ""
+            log.info("→ %s: %r", target, translated)
+
+            with session_lock:
+                session.append({
+                    "source": source,
+                    "target": translated,
+                    "ts": int(time.time()),
+                })
+
+            bridge.send_caption(source=source, target=translated, target_lang=target)
+
+    bridge.stop()
+    if session:
+        log.info("auto-saving %d captions on exit", len(session))
+        save_session()
+    return 0
+
+
 def cmd_recall(args) -> int:
     """Find a person by name fragment and print their recall card to stdout.
 
@@ -301,6 +397,14 @@ def main(argv: list[str] | None = None) -> int:
     )
     rc.add_argument("name", help='name substring, e.g. "javeed" or "abhi"')
     rc.set_defaults(func=cmd_recall)
+
+    t = sub.add_parser(
+        "translate",
+        help="live-caption daemon: mic → Claude → HUD. Save from plugin panel.",
+    )
+    t.add_argument("--to", default="Spanish",
+                   help="target language (default: Spanish)")
+    t.set_defaults(func=cmd_translate)
 
     args = p.parse_args(argv)
     _setup_logging(args.rehearsal)

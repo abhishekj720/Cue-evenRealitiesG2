@@ -16,9 +16,6 @@ const MAIN_CONTAINER_NAME = 'cue'
 const DIVIDER = '-'.repeat(28)
 const IDLE_HUD_TEXT = ['Cue', '', DIVIDER, '', 'Listening...'].join('\n')
 
-// Use the host that served this page so the plugin also works when loaded
-// from a phone on the LAN (real glasses). Fall back to the env override or
-// localhost when running in a dev browser without a host header (rare).
 const DEFAULT_BRIDGE_URL = (() => {
   const envUrl = (import.meta.env as { VITE_CUE_BRIDGE_URL?: string })
     .VITE_CUE_BRIDGE_URL
@@ -37,11 +34,27 @@ type IncomingCard = {
   ttl_ms: number
 }
 type ClearCard = { type: 'clear_card' }
-type Incoming = IncomingCard | ClearCard
+type Caption = {
+  type: 'caption'
+  source: string
+  target: string
+  target_lang: string
+}
+type Incoming = IncomingCard | ClearCard | Caption
 
 type Outgoing =
   | { type: 'temple_tap'; side: 'left' | 'right'; count: number }
   | { type: 'head_shake' }
+  | { type: 'save_captions' }
+  | { type: 'clear_captions' }
+
+type CaptionEntry = {
+  id: number
+  source: string
+  target: string
+  target_lang: string
+  ts: number
+}
 
 function sourceSide(src?: EventSourceType): 'left' | 'right' | null {
   switch (src) {
@@ -72,6 +85,20 @@ function formatCard(card: IncomingCard): string {
   return [card.title, DIVIDER, ...card.lines].join('\n')
 }
 
+function truncate(s: string, n: number): string {
+  return s.length <= n ? s : s.slice(0, n - 1) + '~'
+}
+
+function formatCaption(c: Caption): string {
+  return [
+    `Live: ${c.target_lang}`,
+    DIVIDER,
+    truncate(c.source, 28),
+    '',
+    truncate(c.target, 28),
+  ].join('\n')
+}
+
 function App() {
   const bridgeRef = useRef<EvenAppBridge | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
@@ -84,6 +111,8 @@ function App() {
   const [lastTouch, setLastTouch] = useState('(none)')
   const [events, setEvents] = useState<string[]>([])
   const [sent, setSent] = useState<string[]>([])
+  const [captions, setCaptions] = useState<CaptionEntry[]>([])
+  const [savedToast, setSavedToast] = useState<string>('')
 
   const hudTextRef = useRef(hudText)
   hudTextRef.current = hudText
@@ -127,6 +156,31 @@ function App() {
     ws.send(JSON.stringify({ type: 'raw_event', payload: raw }))
   }
 
+  const onSaveClick = () => {
+    sendToPython({ type: 'save_captions' })
+    setSavedToast(`Asked Python to save ${captions.length} captions...`)
+    window.setTimeout(() => setSavedToast(''), 2500)
+  }
+  const onClearClick = () => {
+    setCaptions([])
+    sendToPython({ type: 'clear_captions' })
+  }
+  const onCopyClick = async () => {
+    const text = captions
+      .slice()
+      .reverse()
+      .map((c) => `${c.source}\n→ ${c.target}`)
+      .join('\n\n')
+    try {
+      await navigator.clipboard.writeText(text)
+      setSavedToast('Copied all captions to clipboard')
+      window.setTimeout(() => setSavedToast(''), 2000)
+    } catch {
+      setSavedToast('Copy failed — clipboard blocked')
+      window.setTimeout(() => setSavedToast(''), 2000)
+    }
+  }
+
   useEffect(() => {
     let unsubscribe: (() => void) | undefined
     let disposed = false
@@ -158,6 +212,22 @@ function App() {
         } else if (msg.type === 'clear_card') {
           setHudText(IDLE_HUD_TEXT)
           setLastCard(null)
+        } else if (msg.type === 'caption') {
+          setHudText(formatCaption(msg))
+          if (ttlTimerRef.current != null)
+            window.clearTimeout(ttlTimerRef.current)
+          setCaptions((prev) =>
+            [
+              {
+                id: Date.now() + Math.random(),
+                source: msg.source,
+                target: msg.target,
+                target_lang: msg.target_lang,
+                ts: Date.now(),
+              },
+              ...prev,
+            ].slice(0, 100),
+          )
         }
       }
     }
@@ -193,8 +263,6 @@ function App() {
         const src = event.sysEvent?.eventSource
         const side = sourceSide(src) ?? 'right'
         const count = countFor(type)
-        // Always forward a sanitized copy of the raw event to Python for
-        // diagnostics; it's cheap and helps us see what the real G2 fires.
         sendRawEvent({
           raw: JSON.parse(JSON.stringify(event)),
           classifiedSide: side,
@@ -218,20 +286,23 @@ function App() {
     }
   }, [])
 
+  const inTranslateMode = captions.length > 0
+
   return (
     <main
       style={{
         padding: 24,
         fontFamily: 'system-ui',
         color: '#111',
-        maxWidth: 880,
+        maxWidth: 980,
       }}
     >
       <header style={{ marginBottom: 16 }}>
         <h1 style={{ margin: 0 }}>Cue — plugin bridge</h1>
         <p style={{ marginTop: 4, fontSize: 14, color: '#555' }}>
           SDK: <code>{bridgeStatus}</code> · WS: <code>{wsStatus}</code> · Last
-          touch: <code>{lastTouch}</code>
+          touch: <code>{lastTouch}</code> · Mode:{' '}
+          <code>{inTranslateMode ? 'translate' : 'recognition'}</code>
         </p>
       </header>
 
@@ -256,10 +327,78 @@ function App() {
         >
           {hudText}
         </div>
-        <p style={{ fontSize: 12, color: '#555', marginTop: 8 }}>
-          Tap temple → forwarded to Python over WebSocket. Python sends a card
-          → renders here and on the G2 HUD.
-        </p>
+      </section>
+
+      {/* ----------------- Translation panel (main UI) ----------------- */}
+      <section
+        style={{
+          marginBottom: 16,
+          padding: 16,
+          border: '1px solid #ddd',
+          borderRadius: 8,
+          background: '#fafafa',
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: 12,
+          }}
+        >
+          <h3 style={{ ...h3, margin: 0 }}>
+            Live translation{' '}
+            <span style={{ color: '#999', fontWeight: 400 }}>
+              ({captions.length} captured)
+            </span>
+          </h3>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button style={btnSave} onClick={onSaveClick} disabled={!captions.length}>
+              💾 Save
+            </button>
+            <button style={btnSecondary} onClick={onCopyClick} disabled={!captions.length}>
+              ⧉ Copy
+            </button>
+            <button style={btnDanger} onClick={onClearClick} disabled={!captions.length}>
+              ✕ Clear
+            </button>
+          </div>
+        </div>
+        {savedToast && (
+          <div
+            style={{
+              background: '#0f9d58',
+              color: '#fff',
+              padding: '6px 10px',
+              borderRadius: 4,
+              fontSize: 13,
+              marginBottom: 10,
+            }}
+          >
+            {savedToast}
+          </div>
+        )}
+        {captions.length === 0 ? (
+          <p style={{ fontSize: 14, color: '#888', margin: 0 }}>
+            Start <code>cue translate --to Spanish</code> in a terminal, then
+            speak. Lines appear here and on the HUD. Click <b>Save</b> to persist
+            to <code>~/.cue/translations/</code>.
+          </p>
+        ) : (
+          <ul style={captionList}>
+            {captions.map((c) => (
+              <li key={c.id} style={captionItem}>
+                <div style={captionHeader}>
+                  <span>{new Date(c.ts).toLocaleTimeString()}</span>
+                  <span>→ {c.target_lang}</span>
+                </div>
+                <div style={captionSrc}>{c.source}</div>
+                <div style={captionDst}>{c.target}</div>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
 
       <section
@@ -305,6 +444,64 @@ const codeBlock: React.CSSProperties = {
   maxHeight: 320,
   overflow: 'auto',
   margin: 0,
+}
+
+const btn: React.CSSProperties = {
+  padding: '8px 14px',
+  fontSize: 13,
+  border: '1px solid #111',
+  borderRadius: 4,
+  cursor: 'pointer',
+  background: '#fff',
+}
+const btnSave: React.CSSProperties = {
+  ...btn,
+  background: '#00b86f',
+  color: '#fff',
+  borderColor: '#00955a',
+  fontWeight: 600,
+}
+const btnSecondary: React.CSSProperties = { ...btn }
+const btnDanger: React.CSSProperties = {
+  ...btn,
+  background: '#fff',
+  color: '#c62828',
+  borderColor: '#c62828',
+}
+
+const captionList: React.CSSProperties = {
+  listStyle: 'none',
+  padding: 0,
+  margin: 0,
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 8,
+  maxHeight: 400,
+  overflow: 'auto',
+}
+const captionItem: React.CSSProperties = {
+  background: '#fff',
+  border: '1px solid #e5e5e5',
+  borderRadius: 6,
+  padding: '8px 12px',
+}
+const captionHeader: React.CSSProperties = {
+  display: 'flex',
+  justifyContent: 'space-between',
+  fontSize: 11,
+  color: '#888',
+  marginBottom: 4,
+  fontFamily: 'monospace',
+}
+const captionSrc: React.CSSProperties = {
+  fontSize: 14,
+  color: '#555',
+  marginBottom: 4,
+}
+const captionDst: React.CSSProperties = {
+  fontSize: 15,
+  color: '#111',
+  fontWeight: 500,
 }
 
 export default App
