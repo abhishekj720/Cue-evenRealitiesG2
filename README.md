@@ -51,13 +51,65 @@ cp .env.example .env
 #   https://console.anthropic.com/settings/keys
 #   (needs credits in Plans & Billing to actually use /v1/messages)
 
-# 4. Smoke-test
+# 4. Plugin deps
+cd cue_plugin && npm install && cd ..
+
+# 5. Simulator (one-time global install)
+npm install -g @evenrealities/evenhub-simulator
+
+# 6. Smoke-test
 .venv/bin/pytest -q
+# → expect "7 passed"
 ```
 
 First install pulls PyTorch, CTranslate2 (Whisper), Resemblyzer, silero-vad —
 about ~1 GB. The initial `cue enroll` call downloads the Whisper `tiny.en`
 model (~40 MB) and Resemblyzer weights the first time they're used.
+
+### First run — 3 terminals
+
+```bash
+# Terminal A — Python daemon (recognition + optional translation)
+.venv/bin/python -m cue.app run --echo
+
+# Terminal B — React plugin (Vite dev server)
+cd cue_plugin && npm run dev
+
+# Terminal C — G2 simulator pointing at the plugin
+evenhub-simulator http://localhost:5173
+```
+
+Then tap/speak per the demo flow below. For live translation captions, swap
+Terminal A to `cue.app translate --to Spanish` (or any language).
+
+### Seed the 4 pitch personas
+
+The enrollment DB (`~/.cue/people.db`) doesn't transfer via git. Re-seed on
+any new machine:
+
+```bash
+.venv/bin/python scripts/seed_pitch_data.py --reset
+.venv/bin/python -m cue.app list    # confirm 4 rows
+.venv/bin/python -m cue.app brief   # populate Claude briefs (needs API key)
+```
+
+### Setup gotchas
+
+| Symptom | Fix |
+|---|---|
+| `llvmlite` build fails | Run the `--only-binary=:all:` line above BEFORE `pip install -e` |
+| Whisper / Resemblyzer extremely slow on M-series Mac | Your Python is Intel under Rosetta. Use `/opt/homebrew/bin/python3.12` (native ARM) |
+| Mic permission denied | macOS → Settings → Privacy & Security → Microphone → enable your terminal app |
+| `webrtcvad` import error about `pkg_resources` | `pip install "setuptools<81"` — modern setuptools dropped `pkg_resources` |
+| Plugin stuck at `WS: connecting` | Python daemon not running, or Terminal A died. Restart it. |
+| No card on HUD despite MATCH in log | Plugin WS connected to a dead bridge. Refresh the simulator window. |
+
+### What does NOT transfer via git
+
+- `~/.cue/people.db` — local voiceprints. Rebuild via `seed_pitch_data.py` or re-enroll.
+- `.env` with your real API key. Copy `.env.example` → `.env` and paste your key.
+- Downloaded ML weights. Auto-downloaded on first model use.
+- `.venv/` and `cue_plugin/node_modules/`. Recreate via setup steps.
 
 ## Secrets handling
 
