@@ -58,6 +58,10 @@ BRIDGE_HOST: str = os.environ.get("CUE_BRIDGE_HOST", "0.0.0.0")
 BRIDGE_PORT: int = int(os.environ.get("CUE_BRIDGE_PORT", "8765"))
 
 # Optional Claude blurb.
+# TODO: add your Anthropic API key via a local .env file (NEVER commit it).
+# Template: copy .env.example → .env, paste key, restart `cue.app run`.
+# Without a key, six-word blurbs + the 3-line brief fall back to an offline
+# heuristic that still works but sounds less natural.
 ANTHROPIC_API_KEY: str | None = os.environ.get("ANTHROPIC_API_KEY")
 # Haiku is the right model for a 6-word summarization task (fast, cheap, sufficient).
 BLURB_MODEL: str = "claude-haiku-4-5"

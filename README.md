@@ -28,20 +28,44 @@ The only module on the Python side that imports the Even SDK is `sdk_bridge.py`
 — and even that is a WebSocket wrapper, not a direct SDK import. The Python
 code never imports any Even package.
 
-## Install
+## Quick start (fresh clone)
 
-Python 3.11+ (tested on 3.12).
+Python 3.11+ (tested on 3.12). Native ARM Python strongly recommended on
+Apple Silicon — x86 under Rosetta is 150× slower for Resemblyzer inference.
 
 ```bash
-cd /Users/mohammadjaveedsanganakal/workplace/cue
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e ".[dev,blurb]"
+# 1. Clone and enter
+git clone https://github.com/javeedsanganakal/even-realities-g2.git cue
+cd cue
+
+# 2. Python env (use Homebrew python@3.12 on Apple Silicon)
+/opt/homebrew/bin/python3.12 -m venv .venv
+.venv/bin/pip install --upgrade pip wheel
+# numba + llvmlite need wheels (source build is broken on 3.12)
+.venv/bin/pip install --only-binary=:all: "numba>=0.60" "llvmlite>=0.43"
+.venv/bin/pip install -e ".[dev,blurb]"
+
+# 3. Add your Anthropic API key (TODO)
+cp .env.example .env
+#   open .env and replace sk-ant-XXXX-REPLACE-ME with a real key from
+#   https://console.anthropic.com/settings/keys
+#   (needs credits in Plans & Billing to actually use /v1/messages)
+
+# 4. Smoke-test
+.venv/bin/pytest -q
 ```
 
 First install pulls PyTorch, CTranslate2 (Whisper), Resemblyzer, silero-vad —
-about ~1 GB. The initial `cue enroll` call downloads the Whisper model
-(`tiny.en`, ~40 MB) and the Resemblyzer weights the first time they're used.
+about ~1 GB. The initial `cue enroll` call downloads the Whisper `tiny.en`
+model (~40 MB) and Resemblyzer weights the first time they're used.
+
+## Secrets handling
+
+- `.env` is **gitignored**. The `.env.example` template in the repo contains
+  a placeholder key only.
+- No Anthropic key, GitHub token, or other credential is ever committed.
+- If you accidentally commit `.env`, rotate the key at
+  https://console.anthropic.com/settings/keys and `git filter-repo --invert-paths --path .env`.
 
 ## Permissions (macOS)
 
