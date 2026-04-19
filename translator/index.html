@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Cue · Live Translator</title>
+  <style>
+    :root {
+      --bg: #0b0d12;
+      --panel: #151821;
+      --ink: #e7ebf3;
+      --muted: #7c859a;
+      --accent: #00e83e;
+      --warn: #ffb648;
+      --red: #ff5c7a;
+      --border: #20242f;
+      --radius: 14px;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); font-family: -apple-system, BlinkMacSystemFont, 'Inter', system-ui, sans-serif; }
+    main { max-width: 920px; margin: 0 auto; padding: 32px 24px 80px; }
+    header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 24px; border-bottom: 1px solid var(--border); padding-bottom: 16px; }
+    h1 { font-size: 22px; margin: 0; letter-spacing: 0.4px; }
+    h1 span { color: var(--accent); }
+    header .tagline { font-size: 13px; color: var(--muted); }
+
+    .controls { display: grid; grid-template-columns: 1fr 1fr auto; gap: 12px; margin-bottom: 20px; align-items: end; }
+    label { font-size: 11px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--muted); display: block; margin-bottom: 6px; }
+    select { width: 100%; background: var(--panel); color: var(--ink); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; font-size: 14px; }
+
+    .record-btn {
+      appearance: none;
+      border: none;
+      background: var(--accent);
+      color: #05140a;
+      font-weight: 700;
+      font-size: 15px;
+      padding: 14px 22px;
+      border-radius: 999px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      transition: transform 0.05s ease, background 0.2s ease;
+      white-space: nowrap;
+    }
+    .record-btn:hover { transform: translateY(-1px); }
+    .record-btn:active { transform: translateY(0); }
+    .record-btn.recording { background: var(--red); color: #fff; animation: pulse 1.2s infinite; }
+    .record-btn[disabled] { opacity: 0.5; cursor: not-allowed; }
+    @keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(255, 92, 122, 0.7); } 50% { box-shadow: 0 0 0 14px rgba(255, 92, 122, 0); } }
+    .mic-dot { width: 10px; height: 10px; border-radius: 50%; background: currentColor; }
+
+    .status { font-size: 13px; color: var(--muted); margin: 0 0 18px; min-height: 20px; }
+    .status.warn { color: var(--warn); }
+    .status.err { color: var(--red); }
+
+    .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 32px; }
+    .card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px; min-height: 150px; }
+    .card h3 { margin: 0 0 10px; font-size: 11px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--muted); }
+    .card .flag { font-size: 13px; color: var(--accent); font-weight: 600; }
+    .card .text { font-size: 20px; line-height: 1.4; margin: 0; min-height: 80px; color: var(--ink); }
+    .card .text.placeholder { color: var(--muted); font-size: 15px; font-style: italic; }
+    .card.target { border-color: rgba(0, 232, 62, 0.35); }
+
+    h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 1.2px; color: var(--muted); margin: 28px 0 12px; }
+    .history { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; max-height: 300px; overflow: auto; }
+    .history li { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; font-size: 14px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .history li .src { color: var(--muted); }
+    .history li .dst { color: var(--ink); }
+    .history .ts { font-size: 11px; color: var(--muted); grid-column: 1 / -1; margin-top: 4px; }
+
+    .footer { text-align: center; font-size: 12px; color: var(--muted); margin-top: 50px; }
+    .footer code { background: var(--panel); padding: 2px 6px; border-radius: 4px; }
+
+    @media (max-width: 620px) {
+      .controls { grid-template-columns: 1fr 1fr; }
+      .record-btn { grid-column: 1 / -1; }
+      .cards { grid-template-columns: 1fr; }
+      .history li { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Cue · <span>Live Translator</span></h1>
+      <div class="tagline">Browser mic → Whisper → Claude · ambient multilingual.</div>
+    </header>
+
+    <div class="controls">
+      <div>
+        <label for="src">From</label>
+        <select id="src">
+          <option value="auto" selected>Auto-detect</option>
+          <option value="en-US">English</option>
+          <option value="es-ES">Spanish</option>
+          <option value="fr-FR">French</option>
+          <option value="de-DE">German</option>
+          <option value="hi-IN">Hindi</option>
+          <option value="ja-JP">Japanese</option>
+          <option value="zh-CN">Mandarin</option>
+          <option value="ar-SA">Arabic</option>
+        </select>
+      </div>
+      <div>
+        <label for="dst">To</label>
+        <select id="dst">
+          <option value="Spanish">Spanish</option>
+          <option value="French">French</option>
+          <option value="German">German</option>
+          <option value="Hindi">Hindi</option>
+          <option value="Japanese">Japanese</option>
+          <option value="Mandarin">Mandarin (Simplified)</option>
+          <option value="Arabic">Arabic</option>
+          <option value="English" selected>English</option>
+        </select>
+      </div>
+      <button id="record" class="record-btn"><span class="mic-dot"></span><span id="record-label">Start listening</span></button>
+    </div>
+
+    <p id="status" class="status">Tap "Start listening" and speak.</p>
+
+    <div class="cards">
+      <div class="card">
+        <h3>You said <span id="src-flag" class="flag"></span></h3>
+        <p id="src-text" class="text placeholder">(speech will appear here)</p>
+      </div>
+      <div class="card target">
+        <h3>Translation <span id="dst-flag" class="flag"></span></h3>
+        <p id="dst-text" class="text placeholder">(translation will appear here)</p>
+      </div>
+    </div>
+
+    <h2>History</h2>
+    <ul id="history" class="history"></ul>
+
+    <p class="footer">Ctrl+C the server to stop · <code>translator/server.py</code> proxies to Claude Haiku.</p>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const btn = $('record');
+    const btnLabel = $('record-label');
+    const status = $('status');
+    const srcText = $('src-text');
+    const dstText = $('dst-text');
+    const srcFlag = $('src-flag');
+    const dstFlag = $('dst-flag');
+    const history = $('history');
+    const srcSelect = $('src');
+    const dstSelect = $('dst');
+
+    const LANG_NAME = {
+      'auto': 'Auto',
+      'en-US': 'English',
+      'es-ES': 'Spanish',
+      'fr-FR': 'French',
+      'de-DE': 'German',
+      'hi-IN': 'Hindi',
+      'ja-JP': 'Japanese',
+      'zh-CN': 'Mandarin',
+      'ar-SA': 'Arabic',
+    };
+
+    function setStatus(msg, kind) {
+      status.className = 'status' + (kind ? ' ' + kind : '');
+      status.textContent = msg;
+    }
+
+    function updateFlags() {
+      srcFlag.textContent = '· ' + LANG_NAME[srcSelect.value];
+      dstFlag.textContent = '· ' + dstSelect.value;
+    }
+    srcSelect.addEventListener('change', updateFlags);
+    dstSelect.addEventListener('change', updateFlags);
+    updateFlags();
+
+    // ---------- SpeechRecognition (browser-built Whisper-like STT) -------
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      setStatus('Your browser does not support Speech Recognition. Use Chrome, Edge, or Safari.', 'err');
+      btn.disabled = true;
+    }
+
+    let recognition = null;
+    let isRecording = false;
+    let lastTranslated = '';
+
+    function buildRecognition() {
+      const r = new SpeechRecognition();
+      r.interimResults = true;
+      r.continuous = true;
+      const lang = srcSelect.value;
+      r.lang = lang === 'auto' ? 'en-US' : lang;
+      return r;
+    }
+
+    btn.addEventListener('click', () => {
+      if (!isRecording) {
+        startRecording();
+      } else {
+        stopRecording();
+      }
+    });
+
+    function startRecording() {
+      recognition = buildRecognition();
+      isRecording = true;
+      btn.classList.add('recording');
+      btnLabel.textContent = 'Stop listening';
+      setStatus('Listening…');
+      srcText.className = 'text';
+      srcText.textContent = '';
+      dstText.className = 'text placeholder';
+      dstText.textContent = '(translating as you speak…)';
+
+      let finalBuf = '';
+
+      recognition.onresult = (event) => {
+        let interim = '';
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const t = event.results[i][0].transcript;
+          if (event.results[i].isFinal) {
+            finalBuf += t + ' ';
+            translate(finalBuf.trim());
+          } else {
+            interim += t;
+          }
+        }
+        srcText.textContent = (finalBuf + interim).trim() || '(listening…)';
+      };
+
+      recognition.onerror = (e) => {
+        if (e.error === 'no-speech') {
+          setStatus('No speech detected. Keep talking.', 'warn');
+        } else if (e.error === 'not-allowed') {
+          setStatus('Mic permission denied. Check browser settings.', 'err');
+          stopRecording();
+        } else {
+          setStatus('Speech error: ' + e.error, 'err');
+        }
+      };
+
+      recognition.onend = () => {
+        if (isRecording) {
+          // Auto-restart if the user didn't stop.
+          try { recognition.start(); } catch { /* ignore */ }
+        }
+      };
+
+      try {
+        recognition.start();
+      } catch (err) {
+        setStatus('Could not start: ' + err.message, 'err');
+        stopRecording();
+      }
+    }
+
+    function stopRecording() {
+      isRecording = false;
+      btn.classList.remove('recording');
+      btnLabel.textContent = 'Start listening';
+      setStatus('Stopped.');
+      if (recognition) {
+        recognition.onend = null;
+        try { recognition.stop(); } catch { /* ignore */ }
+      }
+    }
+
+    // ---------- Translation via Python backend (Claude Haiku) ------------
+    let translateInflight = null;
+    async function translate(text) {
+      if (!text || text === lastTranslated) return;
+      lastTranslated = text;
+      // Debounce: if a prior fetch is in flight, skip.
+      if (translateInflight) return;
+      translateInflight = (async () => {
+        try {
+          const resp = await fetch('/translate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              text,
+              target: dstSelect.value,
+              source: srcSelect.value === 'auto' ? 'auto' : LANG_NAME[srcSelect.value],
+            }),
+          });
+          if (!resp.ok) throw new Error('HTTP ' + resp.status);
+          const data = await resp.json();
+          dstText.className = 'text';
+          dstText.textContent = data.translation || '(no translation)';
+          pushHistory(text, data.translation);
+        } catch (err) {
+          setStatus('Translate error: ' + err.message, 'err');
+          dstText.className = 'text placeholder';
+          dstText.textContent = '(translation failed — check server logs)';
+        } finally {
+          translateInflight = null;
+        }
+      })();
+    }
+
+    function pushHistory(src, dst) {
+      const li = document.createElement('li');
+      li.innerHTML = `
+        <div class="src">${escapeHtml(src)}</div>
+        <div class="dst">${escapeHtml(dst)}</div>
+        <div class="ts">${new Date().toLocaleTimeString()}  ·  ${dstSelect.value}</div>
+      `;
+      history.prepend(li);
+      // Trim to 20 entries.
+      while (history.children.length > 20) history.removeChild(history.lastChild);
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, (c) => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+      }[c]));
+    }
+  </script>
+</body>
+</html>
